@@ -1,0 +1,73 @@
+# Step 1: Generate Data
+set.seed(123)  # Set seed for reproducibility
+
+# Define parameters
+C <- 10  # Number of countries
+T <- 10   # Number of years
+F <- 1    # Frequency of data (4=quarterly data)
+N <- C * T * F  # Number of observations
+K <- 1    # Number of dimensions for parameters of interest
+L <- 1    # Number of dimensions for nuisance parameters
+P <- 1    # Number of dimensions for dummy variables
+num_simulations <- 5000  # Number of simulations
+theta_true <- rep(0.5, K)  # True parameter of interest
+beta_true <- rep(0.1, L)   # True high-dimensional nuisance parameter
+sigma_true <- rep(0.5, P)  # True dummy variable parameter
+
+# Initialize variables to store estimated parameters, bias, and number of zeroes
+theta_hat_all <- matrix(NA, nrow = K, ncol = num_simulations)  # Estimated parameters of interest
+beta_hat_all <- matrix(NA, nrow = L, ncol = num_simulations)   # Estimated nuisance parameters
+sigma_hat_all <- matrix(NA, nrow = P, ncol = num_simulations)  # Estimated dummy variable parameters
+num_zeroes_all <- numeric(num_simulations)  # Number of zeroes observed in each simulation
+
+PPMLEstimation <- function(N, K, L, P, theta_true, beta_true, sigma_true) {
+  D <- matrix(rnorm(N * K), nrow = N)  # Coefficients for parameters of interest
+  X <- matrix((rchisq(N * L, df = 3) - 3) / sqrt(6), ncol = L)  # Nuisance parameters
+  Dummy <- matrix(sample(0:1, N * P, replace = TRUE), ncol = P)  # Generate dummy variable (binary)
+  R <- rnorm(1, mean = 0, sd = 2)
+  lambda_true <- exp(D * theta_true + X * beta_true + Dummy * sigma_true +R - 1.75)  # True lambda values
+  
+  Y_data <- data.frame(Y = rpois(N, lambda_true))  # Generate from Poisson
+  
+  # Count number of zeroes observed
+  num_zeroes <- sum(Y_data$Y == 0)
+  
+  # Estimate model using PPML
+  PPML_hat <- glm(Y ~ D + X + Dummy, data = Y_data, family = poisson)
+  
+  # Extract estimated parameters
+  coef_values <- coef(PPML_hat)
+  theta_hat <- coef_values[1 + K]  # Estimated parameter for D
+  beta_hat <- coef_values[1 + K + L]  # Estimated parameter for X
+  sigma_hat <- coef_values[1 + K + L + P]  # Estimated parameter for Dummy
+  
+  # Return estimated parameters and number of zeroes observed as a list
+  return(list(theta_hat = theta_hat, beta_hat = beta_hat, sigma_hat = sigma_hat, num_zeroes = num_zeroes))
+}
+
+# Step 1 & 2: Estimate Model & Store Estimates
+for (i in 1:num_simulations) {
+  set.seed(i)
+  result <- PPMLEstimation(N, K, L, P, theta_true, beta_true, sigma_true)
+  theta_hat_all[, i] <- result$theta_hat
+  beta_hat_all[, i] <- result$beta_hat
+  sigma_hat_all[, i] <- result$sigma_hat
+  num_zeroes_all[i] <- result$num_zeroes
+}
+
+# Step 3: Analyze Results
+# Calculate the overall average of simulation averages
+overall_avg_theta_hat <- mean(colMeans(theta_hat_all))  # average estimate for parameters of interest
+overall_avg_beta_hat <- mean(colMeans(beta_hat_all))    # average estimate for nuisance parameters
+overall_avg_sigma_hat <- mean(colMeans(sigma_hat_all))  # average estimate for dummy parameters
+overall_avg_num_zeroes <- mean(num_zeroes_all)  # average number of zeroes observed
+
+# Display overall average estimates
+cat("Average Estimate for Parameters of Interest:")
+print(overall_avg_theta_hat)
+cat("Average Estimate for Nuisance Parameters:")
+print(overall_avg_beta_hat)
+cat("Average Estimate for Dummy Parameters:")
+print(overall_avg_sigma_hat)
+cat("Average Number of Zeroes Observed:")
+print(overall_avg_num_zeroes)
